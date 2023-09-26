@@ -479,7 +479,7 @@ local function CalcAtk()
 		local versionCheckUrl = string.format("https://api.github.com/repos/%s/releases/latest", self.github)
 		local versionResponsePattern = '"tag_name":%s+"%w+(%d+%.%d+)"' -- matches "1.0" in "tag_name": "v1.0"
 		local downloadUrl = string.format("https://github.com/%s/releases/latest", self.github)
-		local compareFunc = function(a, b) return not Utils.isNewerVersion(a, b) end -- if current version is *older* than online version
+		local compareFunc = function(a, b) return a ~= b and not Utils.isNewerVersion(a, b) end -- if current version is *older* than online version
 		local isUpdateAvailable = Utils.checkForVersionUpdate(versionCheckUrl, self.version, versionResponsePattern, compareFunc)
 		return isUpdateAvailable, downloadUrl
 	end
