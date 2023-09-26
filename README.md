@@ -27,12 +27,15 @@ When the tool opens, the Tracker will automatically populate the damage calc for
 ![image](https://github.com/UTDZac/CalcAtk-IronmonExtension/assets/4258818/861b5560-33bb-4daf-ab73-30f027d0bf91)
 
 #### Attack Stat Estimates
+At the top of the screen, you'll see the attacking stat estimate, calculated using the variables below it.
 - The **low-estimate** for the attacking stat is shown as the top value in red font.
 - The **high-estimate** for the attacking stat is shown at the bottom value in green font.
 - Click on the SWORD icon at the top to re-calculate if needed
 - Click the **(Clear)** text-button to clear out all variables
 
 #### Adjust Variables
+You can edit any of these variables used in the calculation simply by clicking on them.
+
 - **Enemy Pokémon Lv**: The level of the Pokémon you are currently fighting against
 - **Damage**: The amount of damage the enemy Pokémon dealt to your Pokémon
 - **Your DEF/SPD**: Your Pokémon's defense stat or special defense stat; use **DEF** for Physical moves and **SPD** for Special moves
