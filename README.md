@@ -1,6 +1,8 @@
 # CalcAtk-IronmonExtension
 Estimate an enemy Pokémon's attacking stat using a reverse damage formula calculation. This extension is for the Gen 3 Ironmon Tracker
 
+The formula used is derived from the Gen 3 decomp [CalculateBaseDamage Formula](https://github.com/pret/pokefirered/blob/23dd3372467922069777addeb37b220f2e25d7e5/src/pokemon.c#L2385-L2649).
+
 ## Requirements
 - [Ironmon-Tracker v8.3.0](https://github.com/besteon/Ironmon-Tracker) or higher
 
