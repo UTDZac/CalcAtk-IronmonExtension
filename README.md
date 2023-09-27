@@ -44,7 +44,7 @@ You can edit any of these variables used in the calculation simply by clicking o
 - **Other Multiplier(s)**: If you need to further adjust the calculation based on other factors, such as Flash Fire or Helping Hand, do that here
 - **[ ] STAB**: Check this box if the move's type matches one of the types of the enemy Pokémon; results in a **1.5x** multipler
 - **[ ] Crit**: Check this box if the move did critical damage; results in a **2.0x** multiplier
-- **[ ] Weather**: Check this box if the currently active weather boosts the move's damage (Fire in the Sun / Water in the Rain); results in a **1.5x** multiplier
+- **[ ] Weather**: Check this box if the currently active weather should boost or half the move's damage (sun/rain only); results in a **1.5x** or **0.5** multiplier
 - **[ ] Burned**: Check this box if the enemy Pokémon is using a Physical move AND is also burned; results in a **0.5x** multipler
 - **[ ] Screen/Reflect**: Check this box if your Pokémon has Light Screen or Reflect active AND they're hit by a Special or Physical move respectively; results in a **0.5x** multipler
 
