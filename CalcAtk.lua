@@ -1,7 +1,7 @@
 local function CalcAtk()
 	local self = {}
 	-- Define descriptive attributes of the custom extension that are displayed on the Tracker settings
-	self.version = "0.3"
+	self.version = "0.4"
 	self.name = "Attacking Damage Calc."
 	self.author = "UTDZac"
 	self.description = "Estimate an enemy Pokémon's attacking stat using a reverse damage formula calculation."
@@ -10,10 +10,13 @@ local function CalcAtk()
 
 	-- Screen "classes"
 	local CalcAtkScreen = {}
+	local lastCalcWasAuto = false
+	local previousScreen = nil -- Used to help navigate backward from the options menu, for ease of access
+	local MIN_STAT = 0
+	local MAX_STAT = 999
 
-	local MIN_STAT, MAX_STAT = 0, 9999
 	-- Returns two values, the first is the low-roll stat (85/100) and the second is the high-roll stat (100/100)
-	local function calcLowHighStat()
+	function self.calcLowHighStat()
 		local B = CalcAtkScreen.Buttons
 
 		-- Get all known values for the formula
@@ -76,40 +79,21 @@ local function CalcAtk()
 		-- 	local headExpression = math.floor(2 * level / 5 + 2) * power / defense / 50
 		-- 	local midExpression = mBurn * mScreen * mWeather
 		-- 	local tailExpression = mCritical * mSTAB * mType * mOther * (mRandom / 100)
-
 		-- 	-- Try and estimate the offensive stat by working backwards
 		-- 	local result = damagetaken / tailExpression
 		-- 	result = result - 2
 		-- 	result = result / midExpression
 		-- 	result = result / math.floor(headExpression)
-
 		-- 	statOutputs[i] = math.floor(result)
 		-- end
 		-- Uncomment to have each of the above values outputed to the Lua Console for debugging
 		-- Utils.printDebug("damagetaken:%s, crit:%s, stab:%s, eff:%s, other:%s, def:%s, burn:%s, screen:%s, weather:%s, power:%s, level:%s",
 		--                   damagetaken,    mCrit,   mStab,   mEff,   mOther,   def,    mBurn,   mScreen,   mWeather,   power,    level)
-
 		-- return statOutputs[1], statOutputs[2]
 	end
 
 	-- Other internal stuff, not involved with the calculations
-	local lastV = { moveId = 0, damage = 0, level = 0, autoCalc = false }
-	local function checkIfValuesChanged()
-		local properBattleTiming = Battle.inBattle and not Battle.enemyHasAttacked and Battle.lastEnemyMoveId ~= 0
-		if not properBattleTiming or not MoveData.isValid(Battle.lastEnemyMoveId) then return false end
-
-		if lastV.moveId ~= Battle.lastEnemyMoveId then
-			return true
-		elseif lastV.damage ~= Battle.damageReceived then
-			return true
-		end
-		local enemyMon = Battle.getViewedPokemon(false) or {}
-		if type(enemyMon.level) == "number" and lastV.level ~= enemyMon.level then
-			return true
-		end
-		return false
-	end
-	local function clearButtonValues()
+	function self.clearButtonValues()
 		for _, button in pairs(CalcAtkScreen.Buttons or {}) do
 			if type(button.reset) == "function" then
 				button:reset()
@@ -117,23 +101,24 @@ local function CalcAtk()
 		end
 	end
 	--- @return number power, string type
-	local function getMovePowerAndType(move, ownMon, enemyMon)
+	function self.getMovePowerAndType(move, ownMon, enemyMon)
+		local moveId = tonumber(move.id or "") or 0
 		local movePower = move.power or MoveData.BlankMove.power
 		local moveType = move.type or MoveData.BlankMove.type
 		-- 311 = Weather Ball
-		if move.id == 311 then
+		if moveId == 311 then
 			moveType, movePower = Utils.calculateWeatherBall(moveType, movePower)
 		-- 67 = Low Kick
-		elseif move.id == 67 and PokemonData.isValid(ownMon.pokemonID) then
+		elseif moveId == 67 and PokemonData.isValid(ownMon.pokemonID) then
 			local targetWeight = ownMon.weight or PokemonData.Pokemon[ownMon.pokemonID].weight or 0
 			movePower = Utils.calculateWeightBasedDamage(movePower, targetWeight)
 		-- 284 = Eruption, 323 = Water Spout
-		elseif (move.id == 284 or move.id == 323) and enemyMon.curHP == enemyMon.stats.hp then
+		elseif (moveId == 284 or moveId == 323) and enemyMon.curHP == enemyMon.stats.hp then
 			movePower = "150"
 		end
 		return tonumber(movePower) or 0, moveType
 	end
-	local function getWeatherBoostState(move)
+	function self.getWeatherBoostState(move)
 		local moveType = move.type or MoveData.BlankMove.type
 		if moveType ~= PokemonData.Types.WATER and moveType ~= PokemonData.Types.FIRE then
 			return 0 -- Default state, no weather bonus
@@ -157,15 +142,15 @@ local function CalcAtk()
 		return 0
 	end
 	-- Attempt to pull as many damage calculation values from the active Pokémon, types, and move used
-	local function autoApplyValues()
-		clearButtonValues()
+	function self.autoApplyValues()
+		self.clearButtonValues()
 		local B = CalcAtkScreen.Buttons
 		local move = MoveData.Moves[Battle.lastEnemyMoveId or false]
 		local ownMon = Battle.getViewedPokemon(true) or {}
 		local enemyMon = Battle.getViewedPokemon(false) or {}
 		if move then
 			B.ValueDamageTaken.value = Battle.damageReceived or 0
-			local movePower, moveType = getMovePowerAndType(move, ownMon, enemyMon)
+			local movePower, moveType = self.getMovePowerAndType(move, ownMon, enemyMon)
 			B.ValueMovePower.value = movePower
 			local ownTypes = Program.getPokemonTypes(true, Battle.isViewingLeft)
 			B.ValueMoveEffectiveness.value = Utils.netEffectiveness(move, moveType, ownTypes)
@@ -185,33 +170,28 @@ local function CalcAtk()
 				B.CheckboxBurn.toggleState = (isMovePhysical and enemyMon.status == MiscData.StatusType.Burn)
 			end
 
-			B.CheckboxWeather.state = getWeatherBoostState(move)
+			B.CheckboxWeather.state = self.getWeatherBoostState(move)
 		end
-		lastV.moveId = Battle.lastEnemyMoveId or 0
-		lastV.damage = Battle.damageReceived or 0
-		lastV.level = enemyMon.level or 0
-		-- lastV.autoCalc = true -- Set elsewhere in afterValuesChanged()
 	end
-
-	local function afterValuesChanged(isAuto)
+	function self.afterValuesChanged(isAuto)
 		CalcAtkScreen.Buttons.CalculatedStatOutput:recalculate(isAuto)
 		CalcAtkScreen.refreshButtons()
 		Program.redraw(true)
 	end
-	local function openEditValuePopup(button)
+	function self.openEditValuePopup(button)
 		local form = Utils.createBizhawkForm("Edit Value", 320, 130, 100, 50)
 		forms.label(form, button:getCustomText() or "Value", 54, 20, 138, 20)
 		local textBox = forms.textbox(form, button.value or 0, 45, 20, nil, 194, 18)
 		forms.button(form, Resources.AllScreens.Save, function()
 			button.value = tonumber(forms.gettext(textBox) or "") or button.defaultValue
 			Utils.closeBizhawkForm(form)
-			afterValuesChanged(false)
+			self.afterValuesChanged(false)
 		end, 75, 50)
 		forms.button(form, Resources.AllScreens.Cancel, function()
 			Utils.closeBizhawkForm(form)
 		end, 165, 50)
 	end
-	local function formatMultiplier(value)
+	function self.formatMultiplier(value)
 		local format = {
 			[0] = "0x",
 			[0.25] = "1/4x",
@@ -223,12 +203,7 @@ local function CalcAtk()
 		return format[value or false] or value
 	end
 
-	-- Used to help navigate backward from the options menu, for ease of access
-	local previousScreen = nil
-
-	-----------------------
 	-- CalcAtkScreen --
-	-----------------------
 	CalcAtkScreen.Colors = {
 		text = "Default text",
 		highlight = "Intermediate text",
@@ -273,22 +248,22 @@ local function CalcAtk()
 		SwordIcon = {
 			type = Constants.ButtonTypes.PIXELIMAGE,
 			image = Constants.PixelImages.SWORD_ATTACK,
-			box = { Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 61, Constants.SCREEN.MARGIN + 16, 13, 13 },
+			box = { Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 62, Constants.SCREEN.MARGIN + 16, 13, 13 },
 			onClick = function(this)
 				if Battle.inBattle then
-					autoApplyValues()
+					self.autoApplyValues()
 				end
-				afterValuesChanged(true)
+				self.afterValuesChanged(true)
 			end,
 		},
 		Clear = {
 			type = Constants.ButtonTypes.NO_BORDER,
 			getText = function(this) return string.format("(%s)", Resources.AllScreens.Clear) end,
 			textColor = CalcAtkScreen.Colors.highlight,
-			box = {	Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 52, Constants.SCREEN.MARGIN + 30, 35, 11 },
+			box = {	Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 53, Constants.SCREEN.MARGIN + 30, 35, 11 },
 			onClick = function(this)
-				clearButtonValues()
-				afterValuesChanged(false)
+				self.clearButtonValues()
+				self.afterValuesChanged(false)
 			end,
 		},
 		CalculatedStatOutput = {
@@ -300,9 +275,9 @@ local function CalcAtk()
 			isVisible = function(this) return this.values[1] ~= this.defaultValue and this.values[2] ~= this.defaultValue end,
 			-- updateSelf = function(this) end,
 			recalculate = function(this, isAuto)
-				this.values[1], this.values[2] = calcLowHighStat()
+				this.values[1], this.values[2] = self.calcLowHighStat()
 				if isAuto ~= nil then
-					lastV.autoCalc = (isAuto == true)
+					lastCalcWasAuto = (isAuto == true)
 				end
 				if this.values[1] > this.values[2] then -- Simple safety check so the lower value is on top
 					local swapValue = this.values[1]
@@ -324,14 +299,16 @@ local function CalcAtk()
 				local x1C = Utils.getCenteredTextX(v1Text, w)
 				local x2C = Utils.getCenteredTextX(v2Text, w)
 				Drawing.drawText(x + 17, y + 8, "~", Theme.COLORS[CalcAtkScreen.Colors.text], shadowcolor) -- Divider
+				Drawing.drawText(x - 2, y, "Lo:", Theme.COLORS[CalcAtkScreen.Colors.text], shadowcolor)
 				Drawing.drawText(x + x1C, y, v1Text, Theme.COLORS["Negative text"], shadowcolor)
+				Drawing.drawText(x - 2, y + 16, "Hi:", Theme.COLORS[CalcAtkScreen.Colors.text], shadowcolor)
 				Drawing.drawText(x + x2C, y + 16, v2Text, Theme.COLORS["Positive text"], shadowcolor)
 			end,
 			onClick = function(this)
 				if Battle.inBattle then
-					autoApplyValues()
+					self.autoApplyValues()
 				end
-				afterValuesChanged(true)
+				self.afterValuesChanged(true)
 			end,
 		},
 		ValuePokemonLevel = {
@@ -345,7 +322,7 @@ local function CalcAtk()
 			box = {	buttonOffsetX, nextButtonY(), 20, 10 },
 			updateSelf = btnUpdateSelf,
 			draw = leftAlignText,
-			onClick = function(this) openEditValuePopup(this) end,
+			onClick = function(this) self.openEditValuePopup(this) end,
 		},
 		ValueDamageTaken = {
 			type = Constants.ButtonTypes.NO_BORDER,
@@ -358,7 +335,7 @@ local function CalcAtk()
 			box = {	buttonOffsetX, nextButtonY(), 20, 10 },
 			updateSelf = btnUpdateSelf,
 			draw = leftAlignText,
-			onClick = function(this) openEditValuePopup(this) end,
+			onClick = function(this) self.openEditValuePopup(this) end,
 		},
 		ValuePokemonDefense = {
 			type = Constants.ButtonTypes.NO_BORDER,
@@ -371,7 +348,7 @@ local function CalcAtk()
 			box = {	buttonOffsetX, nextButtonY(), 20, 10 },
 			updateSelf = btnUpdateSelf,
 			draw = leftAlignText,
-			onClick = function(this) openEditValuePopup(this) end,
+			onClick = function(this) self.openEditValuePopup(this) end,
 		},
 		ValueMovePower = {
 			type = Constants.ButtonTypes.NO_BORDER,
@@ -384,11 +361,11 @@ local function CalcAtk()
 			box = {	buttonOffsetX, nextButtonY(), 20, 10 },
 			updateSelf = btnUpdateSelf,
 			draw = leftAlignText,
-			onClick = function(this) openEditValuePopup(this) end,
+			onClick = function(this) self.openEditValuePopup(this) end,
 		},
 		ValueMoveEffectiveness = {
 			type = Constants.ButtonTypes.NO_BORDER,
-			getText = function(this) return formatMultiplier(this.value) end,
+			getText = function(this) return self.formatMultiplier(this.value) end,
 			getCustomText = function() return "Move Effectiveness:" end,
 			textColor = CalcAtkScreen.Colors.highlight,
 			value = 1.0,
@@ -397,11 +374,11 @@ local function CalcAtk()
 			box = {	buttonOffsetX, nextButtonY(), 20, 10 },
 			updateSelf = btnUpdateSelf,
 			draw = leftAlignText,
-			onClick = function(this) openEditValuePopup(this) end,
+			onClick = function(this) self.openEditValuePopup(this) end,
 		},
 		ValueOtherMultiplier = {
 			type = Constants.ButtonTypes.NO_BORDER,
-			getText = function(this) return formatMultiplier(this.value) end,
+			getText = function(this) return self.formatMultiplier(this.value) end,
 			getCustomText = function() return "Other Multiplier(s):" end,
 			textColor = CalcAtkScreen.Colors.highlight,
 			value = 1.0,
@@ -410,7 +387,7 @@ local function CalcAtk()
 			box = {	buttonOffsetX, nextButtonY(), 20, 10 },
 			updateSelf = btnUpdateSelf,
 			draw = leftAlignText,
-			onClick = function(this) openEditValuePopup(this) end,
+			onClick = function(this) self.openEditValuePopup(this) end,
 		},
 		CheckboxStab = {
 			type = Constants.ButtonTypes.CHECKBOX,
@@ -423,7 +400,7 @@ local function CalcAtk()
 			box = {	Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 5, buttonOffsetY, 8, 8 },
 			onClick = function(this)
 				this.toggleState = not this.toggleState
-				afterValuesChanged(false)
+				self.afterValuesChanged(false)
 			end,
 		},
 		CheckboxCrit = {
@@ -437,7 +414,7 @@ local function CalcAtk()
 			box = {	Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 50, buttonOffsetY, 8, 8 },
 			onClick = function(this)
 				this.toggleState = not this.toggleState
-				afterValuesChanged(false)
+				self.afterValuesChanged(false)
 			end,
 		},
 		CheckboxWeather = {
@@ -459,7 +436,7 @@ local function CalcAtk()
 			end,
 			onClick = function(this)
 				this.state = (this.state + 1) % 3
-				afterValuesChanged(false)
+				self.afterValuesChanged(false)
 			end,
 		},
 		CheckboxBurn = {
@@ -473,7 +450,7 @@ local function CalcAtk()
 			box = {	Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 5, buttonOffsetY, 8, 8 },
 			onClick = function(this)
 				this.toggleState = not this.toggleState
-				afterValuesChanged(false)
+				self.afterValuesChanged(false)
 			end,
 		},
 		CheckboxScreenReflect = {
@@ -487,7 +464,7 @@ local function CalcAtk()
 			box = {	Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 50, buttonOffsetY, 8, 8 },
 			onClick = function(this)
 				this.toggleState = not this.toggleState
-				afterValuesChanged(false)
+				self.afterValuesChanged(false)
 			end,
 		},
 		LabelConfidence = {
@@ -497,7 +474,7 @@ local function CalcAtk()
 			confidentCalc = true,
 			defaultValue = true,
 			reset = function(this) this.confidentCalc = this.defaultValue end,
-			isVisible = function(this) return lastV.autoCalc and not this.confidentCalc end, -- Only visible if not a confident auto-calculation
+			isVisible = function(this) return lastCalcWasAuto and not this.confidentCalc end, -- Only visible if not a confident auto-calculation
 			box = {	Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 3, nextButtonY(-1), 8, 8 },
 			checkAccuracyOfCalc = function(this, lowStat, highStat)
 				local tolerance = 0.1 -- 10%
@@ -523,7 +500,7 @@ local function CalcAtk()
 				local statbox = CalcAtkScreen.Buttons.CalculatedStatOutput.box
 				local x, y = statbox[1], statbox[2]
 				local w, h = statbox[3], statbox[4]
-				Drawing.drawText(x + w - 3, y + 1, "*", Theme.COLORS[CalcAtkScreen.Colors.highlight], shadowcolor)
+				Drawing.drawText(x + w - 1, y + 1, "*", Theme.COLORS[CalcAtkScreen.Colors.highlight], shadowcolor)
 			end,
 		},
 		Back = Drawing.createUIElementBackButton(function()
@@ -574,18 +551,18 @@ local function CalcAtk()
 		end
 	end
 
-	local createButtonInserts = function ()
+	function self.createButtonInserts()
 		TrackerScreen.Buttons.LastAttackSummary.onClick = function(this)
 			previousScreen = TrackerScreen
 			if Battle.inBattle then
-				autoApplyValues()
+				self.autoApplyValues()
 			end
 			CalcAtkScreen.Buttons.CalculatedStatOutput:recalculate(true)
 			CalcAtkScreen.refreshButtons()
 			Program.changeScreenView(CalcAtkScreen)
 		end
 	end
-	local removeButtonInserts = function()
+	function self.removeButtonInserts()
 		-- Restore the onclick functionality to default (as of 8.3.0, it's just empty, no action)
 		TrackerScreen.Buttons.LastAttackSummary.onClick = function(this) end
 	end
@@ -605,7 +582,9 @@ local function CalcAtk()
 	function self.configureOptions()
 		previousScreen = SingleExtensionScreen
 		if Battle.inBattle then
-			autoApplyValues()
+			self.autoApplyValues()
+		else
+			self.clearButtonValues()
 		end
 		CalcAtkScreen.Buttons.CalculatedStatOutput:recalculate(true)
 		CalcAtkScreen.refreshButtons()
@@ -614,26 +593,19 @@ local function CalcAtk()
 
 	-- Executed only once: When the extension is enabled by the user, and/or when the Tracker first starts up, after it loads all other required files and code
 	function self.startup()
-		createButtonInserts()
-		clearButtonValues()
+		self.createButtonInserts()
+		self.clearButtonValues()
 		CalcAtkScreen.refreshButtons()
 	end
 
 	-- Executed only once: When the extension is disabled by the user, necessary to undo any customizations, if able
 	function self.unload()
-		removeButtonInserts()
-	end
-
-	-- Executed once every 30 frames, after most data from game memory is read in
-	function self.afterProgramDataUpdate()
-		if checkIfValuesChanged() then
-			autoApplyValues()
-		end
+		self.removeButtonInserts()
 	end
 
 	-- Executed after a battle ends, and only once per battle
 	function self.afterBattleEnds()
-		clearButtonValues()
+		self.clearButtonValues()
 		if Program.currentScreen == CalcAtkScreen then
 			Program.changeScreenView(TrackerScreen)
 		end
