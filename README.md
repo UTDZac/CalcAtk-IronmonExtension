@@ -1,7 +1,7 @@
 # Attacking Damage Calculator - Ironmon Tracker Extension
 Estimate an enemy Pokémon's attacking stat using a reverse damage formula calculation. This extension is for the Gen 3 Ironmon Tracker
 
-Click on any variable number or checkbox to adjust the calculation
+**Click on any variable number or checkbox** to adjust the calculation.
 
 ![image](https://github.com/UTDZac/CalcAtk-IronmonExtension/assets/4258818/0216b807-9c95-4558-8c83-6d8f1a05529a)
 
