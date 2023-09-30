@@ -1,19 +1,30 @@
 local function CalcAtk()
 	local self = {}
 	-- Define descriptive attributes of the custom extension that are displayed on the Tracker settings
-	self.version = "0.4"
+	self.version = "1.0"
 	self.name = "Attacking Damage Calc."
 	self.author = "UTDZac"
 	self.description = "Estimate an enemy Pokémon's attacking stat using a reverse damage formula calculation."
-	self.github = "UTDZac/CalcAtk-IronmonExtension" -- Not release, not public, DO NOT SHARE
+	self.github = "UTDZac/CalcAtk-IronmonExtension"
 	self.url = string.format("https://github.com/%s", self.github)
 
 	-- Screen "classes"
 	local CalcAtkScreen = {}
 	local lastCalcWasAuto = false
+	local lastCalcGuesstimate = false
 	local previousScreen = nil -- Used to help navigate backward from the options menu, for ease of access
 	local MIN_STAT = 0
 	local MAX_STAT = 999
+
+	-- https://bulbapedia.bulbagarden.net/wiki/Multi-strike_move#Variable_number_of_strikes
+	local multiHitMoves = {
+		[292] = true, [140] = true, [198] = true, [331] = true, [4] = true, [3] = true,
+		[31] = true, [154] = true, [333] = true, [42] = true, [350] = true, [131] = true
+	}
+	-- https://bulbapedia.bulbagarden.net/wiki/Multi-strike_move#Fixed_number_of_multiple_strikes
+	local doubleHitMoves = {
+		[155] = true, [24] = true,
+	}
 
 	-- Returns two values, the first is the low-roll stat (85/100) and the second is the high-roll stat (100/100)
 	function self.calcLowHighStat()
@@ -105,16 +116,60 @@ local function CalcAtk()
 		local moveId = tonumber(move.id or "") or 0
 		local movePower = move.power or MoveData.BlankMove.power
 		local moveType = move.type or MoveData.BlankMove.type
+		local validOwn = PokemonData.isValid(ownMon.pokemonID)
+		local validEnemy = PokemonData.isValid(enemyMon.pokemonID)
+		lastCalcGuesstimate = false
+
+		-- Slightly hide the known info the tracker has by rounding to the nearest tenth.
+		local function guesstimate(value)
+			lastCalcGuesstimate = true
+			return math.floor(value / 10 + 0.5) * 10
+		end
+
 		-- 311 = Weather Ball
 		if moveId == 311 then
 			moveType, movePower = Utils.calculateWeatherBall(moveType, movePower)
 		-- 67 = Low Kick
-		elseif moveId == 67 and PokemonData.isValid(ownMon.pokemonID) then
+		elseif moveId == 67 and validOwn then
 			local targetWeight = ownMon.weight or PokemonData.Pokemon[ownMon.pokemonID].weight or 0
 			movePower = Utils.calculateWeightBasedDamage(movePower, targetWeight)
-		-- 284 = Eruption, 323 = Water Spout
-		elseif (moveId == 284 or moveId == 323) and enemyMon.curHP == enemyMon.stats.hp then
-			movePower = "150"
+		-- 284 = Eruption, 323 = Water Spout (Guesstimate)
+		elseif (moveId == 284 or moveId == 323) and validEnemy then
+			local ratio = guesstimate(enemyMon.curHP / enemyMon.stats.hp)
+			movePower = tostring(math.max(150 * ratio, 1)) -- minimum of 1
+		-- 175 = Flail, 179 = Reversal (Guesstimate)
+		elseif (moveId == 175 or moveId == 179) and validEnemy then
+			lastCalcGuesstimate = true
+			local ratio = enemyMon.curHP * 48 / enemyMon.stats.hp
+			-- Fudge the numbers a bit to "guesstimate" the ratio (can't simply round to nearest tenth)
+			-- if ratio <= 1 then		movePower = "200"
+			if ratio <= 5 then			movePower = "150"
+			elseif ratio <= 10 then		movePower = "100"
+			elseif ratio <= 18 then		movePower = "80"
+			elseif ratio <= 34 then		movePower = "40"
+			else						movePower = "20"
+			end
+		-- 216 = Return (Guesstimate)
+		elseif moveId == 216 and validEnemy and Battle.isWildEncounter then
+			local friendship = PokemonData.Pokemon[enemyMon.pokemonID].friendshipBase or 70 -- default 70 for most pokemon
+			local basePower = math.max(guesstimate(friendship / 2.5), 1) -- minimum of 1
+			movePower = tostring(basePower)
+		-- 218 = Frustration (Guesstimate)
+		elseif moveId == 218 and validEnemy and Battle.isWildEncounter then
+			local friendship = PokemonData.Pokemon[enemyMon.pokemonID].friendshipBase or 70 -- default 70 for most pokemon
+			friendship = 255 - friendship -- Invert for Frustration
+			local basePower = math.max(guesstimate(friendship / 2.5), 1) -- minimum of 1
+			movePower = tostring(basePower)
+		-- 167 = Triple Kick
+		elseif moveId == 167 then
+			lastCalcGuesstimate = true
+			local power = tonumber(movePower) or 0
+			movePower = tostring(power + power * 2 + power * 3) -- 10 pow + 20 pow + 30 pow
+		elseif doubleHitMoves[moveId] then
+			local power = tonumber(movePower) or 0
+			movePower = tostring(power * 2)
+		elseif multiHitMoves[moveId] then
+			lastCalcGuesstimate = true
 		end
 		return tonumber(movePower) or 0, moveType
 	end
@@ -155,7 +210,7 @@ local function CalcAtk()
 			local ownTypes = Program.getPokemonTypes(true, Battle.isViewingLeft)
 			B.ValueMoveEffectiveness.value = Utils.netEffectiveness(move, moveType, ownTypes)
 			local enemyTypes = Program.getPokemonTypes(false, Battle.isViewingLeft)
-			B.CheckboxStab.toggleState = (moveType == enemyTypes[1] or moveType == enemyTypes[2])
+			B.CheckboxStab.toggleState = Utils.isSTAB(move, move.type, enemyTypes)
 
 			local isMovePhysical = MoveData.TypeToCategory[moveType] == MoveData.Categories.PHYSICAL
 			if PokemonData.isValid(ownMon.pokemonID) then
@@ -216,6 +271,13 @@ local function CalcAtk()
 		buttonOffsetY = buttonOffsetY + Constants.SCREEN.LINESPACING + (extraOffset or 0)
 		return buttonOffsetY
 	end
+	local function verifyValue(value)
+		if (value or 0) == 0 then
+			return Constants.HIDDEN_INFO
+		else
+			return tostring(value)
+		end
+	end
 	local function leftAlignText(button, shadowcolor)
 		local x, y = Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 3, button.box[2]
 		local text = button:getCustomText() or button:getText() or ""
@@ -223,7 +285,7 @@ local function CalcAtk()
 	end
 	local function btnUpdateSelf(button)
 		local text = button:getText() or ""
-		if text == "0" or text == "0x" then
+		if text == Constants.HIDDEN_INFO or text == "0" or text == "0x" then
 			button.textColor = "Negative text"
 		else
 			button.textColor = CalcAtkScreen.Colors.highlight
@@ -313,7 +375,7 @@ local function CalcAtk()
 		},
 		ValuePokemonLevel = {
 			type = Constants.ButtonTypes.NO_BORDER,
-			getText = function(this) return tostring(this.value) end,
+			getText = function(this) return verifyValue(this.value) end,
 			getCustomText = function() return "Enemy Pokémon Lv:" end,
 			textColor = CalcAtkScreen.Colors.highlight,
 			value = 0,
@@ -326,7 +388,7 @@ local function CalcAtk()
 		},
 		ValueDamageTaken = {
 			type = Constants.ButtonTypes.NO_BORDER,
-			getText = function(this) return tostring(this.value) end,
+			getText = function(this) return verifyValue(this.value) end,
 			getCustomText = function() return "Damage:" end,
 			textColor = CalcAtkScreen.Colors.highlight,
 			value = 0,
@@ -339,7 +401,7 @@ local function CalcAtk()
 		},
 		ValuePokemonDefense = {
 			type = Constants.ButtonTypes.NO_BORDER,
-			getText = function(this) return tostring(this.value) end,
+			getText = function(this) return verifyValue(this.value) end,
 			getCustomText = function() return "Your DEF/SPD:" end,
 			textColor = CalcAtkScreen.Colors.highlight,
 			value = 0,
@@ -352,7 +414,10 @@ local function CalcAtk()
 		},
 		ValueMovePower = {
 			type = Constants.ButtonTypes.NO_BORDER,
-			getText = function(this) return tostring(this.value) end,
+			getText = function(this)
+				local val = verifyValue(this.value)
+				return lastCalcGuesstimate and string.format("%s*", val) or val
+			end,
 			getCustomText = function() return "Move Power:" end,
 			textColor = CalcAtkScreen.Colors.highlight,
 			value = 0,
