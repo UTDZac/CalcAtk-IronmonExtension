@@ -1,7 +1,7 @@
 local function CalcAtk()
 	local self = {}
 	-- Define descriptive attributes of the custom extension that are displayed on the Tracker settings
-	self.version = "1.0"
+	self.version = "1.1"
 	self.name = "Attacking Damage Calc."
 	self.author = "UTDZac"
 	self.description = "Estimate an enemy Pokémon's attacking stat using a reverse damage formula calculation."
@@ -281,11 +281,10 @@ local function CalcAtk()
 	local function leftAlignText(button, shadowcolor)
 		local x, y = Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 3, button.box[2]
 		local text = button:getCustomText() or button:getText() or ""
-		Drawing.drawText(x, y, text, Theme.COLORS[CalcAtkScreen.Colors.text], shadowcolor)
+		Drawing.drawTransparentTextbox(x, y, text, Theme.COLORS[CalcAtkScreen.Colors.text], Theme.COLORS[CalcAtkScreen.Colors.fill], shadowcolor)
 	end
 	local function btnUpdateSelf(button)
-		local text = button:getText() or ""
-		if text == Constants.HIDDEN_INFO or text == "0" or text == "0x" then
+		if button.value == 0 or (button:getText() or "") == Constants.HIDDEN_INFO then
 			button.textColor = "Negative text"
 		else
 			button.textColor = CalcAtkScreen.Colors.highlight
@@ -310,7 +309,7 @@ local function CalcAtk()
 		SwordIcon = {
 			type = Constants.ButtonTypes.PIXELIMAGE,
 			image = Constants.PixelImages.SWORD_ATTACK,
-			box = { Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 62, Constants.SCREEN.MARGIN + 16, 13, 13 },
+			box = { Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 63, Constants.SCREEN.MARGIN + 16, 13, 13 },
 			onClick = function(this)
 				if Battle.inBattle then
 					self.autoApplyValues()
@@ -322,7 +321,7 @@ local function CalcAtk()
 			type = Constants.ButtonTypes.NO_BORDER,
 			getText = function(this) return string.format("(%s)", Resources.AllScreens.Clear) end,
 			textColor = CalcAtkScreen.Colors.highlight,
-			box = {	Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 53, Constants.SCREEN.MARGIN + 30, 35, 11 },
+			box = {	Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 54, Constants.SCREEN.MARGIN + 30, 35, 11 },
 			onClick = function(this)
 				self.clearButtonValues()
 				self.afterValuesChanged(false)
@@ -333,7 +332,7 @@ local function CalcAtk()
 			values = { -999, -999 },
 			defaultValue = -999,
 			reset = function(this) this.values = { this.defaultValue, this.defaultValue } end,
-			box = {	Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 88, Constants.SCREEN.MARGIN + 14, 40, 26 },
+			box = {	Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN + 89, Constants.SCREEN.MARGIN + 14, 40, 26 },
 			isVisible = function(this) return this.values[1] ~= this.defaultValue and this.values[2] ~= this.defaultValue end,
 			-- updateSelf = function(this) end,
 			recalculate = function(this, isAuto)
@@ -366,17 +365,11 @@ local function CalcAtk()
 				Drawing.drawText(x - 2, y + 16, "Hi:", Theme.COLORS[CalcAtkScreen.Colors.text], shadowcolor)
 				Drawing.drawText(x + x2C, y + 16, v2Text, Theme.COLORS["Positive text"], shadowcolor)
 			end,
-			onClick = function(this)
-				if Battle.inBattle then
-					self.autoApplyValues()
-				end
-				self.afterValuesChanged(true)
-			end,
 		},
 		ValuePokemonLevel = {
 			type = Constants.ButtonTypes.NO_BORDER,
-			getText = function(this) return verifyValue(this.value) end,
-			getCustomText = function() return "Enemy Pokémon Lv:" end,
+			getText = function(this) return string.format("%s.%s", Resources.TrackerScreen.LevelAbbreviation, verifyValue(this.value)) end,
+			getCustomText = function() return "Enemy Pokémon:" end,
 			textColor = CalcAtkScreen.Colors.highlight,
 			value = 0,
 			defaultValue = 0,
@@ -594,9 +587,9 @@ local function CalcAtk()
 	function CalcAtkScreen.drawScreen()
 		local canvas = {
 			x = Constants.SCREEN.WIDTH + Constants.SCREEN.MARGIN,
-			y = Constants.SCREEN.MARGIN + 10,
+			y = Constants.SCREEN.MARGIN,
 			w = Constants.SCREEN.RIGHT_GAP - (Constants.SCREEN.MARGIN * 2),
-			h = Constants.SCREEN.HEIGHT - (Constants.SCREEN.MARGIN * 2) - 10,
+			h = Constants.SCREEN.HEIGHT - (Constants.SCREEN.MARGIN * 2),
 			text = Theme.COLORS[CalcAtkScreen.Colors.text],
 			border = Theme.COLORS[CalcAtkScreen.Colors.border],
 			fill = Theme.COLORS[CalcAtkScreen.Colors.fill],
@@ -604,15 +597,28 @@ local function CalcAtk()
 		}
 		Drawing.drawBackgroundAndMargins()
 		gui.defaultTextBackground(canvas.fill)
-		-- Header text above canvas box
-		local headerText = Utils.formatSpecialCharacters("Attacking Damage Calculator" or self.name)
-		local headerShadow = Utils.calcShadowColor(Theme.COLORS["Main background"])
-		Drawing.drawText(canvas.x, Constants.SCREEN.MARGIN - 2, Utils.toUpperUTF8(headerText), Theme.COLORS["Header text"], headerShadow)
+
 		-- Draw the canvas box
 		gui.drawRectangle(canvas.x, canvas.y, canvas.w, canvas.h, canvas.border, canvas.fill)
-		-- Draw all the buttons
+		-- Draw the pokemon icon first
+		Drawing.drawButton(CalcAtkScreen.Buttons.PokemonIcon, canvas.shadow)
+
+		-- Move name or title text
+		local topText
+		local move = MoveData.Moves[Battle.lastEnemyMoveId or false]
+		if move and move.name then
+			topText = string.format("Move used: %s", move.name)
+		else
+			topText = Utils.formatSpecialCharacters("Attacking Damage Calculator" or self.name)
+		end
+		local centeredX = Utils.getCenteredTextX(topText, canvas.w) - 2
+		Drawing.drawTransparentTextbox(canvas.x + centeredX, canvas.y + 2, topText, canvas.text, canvas.fill, canvas.shadow)
+
+		-- Draw all other the buttons
 		for _, button in pairs(CalcAtkScreen.Buttons or {}) do
-			Drawing.drawButton(button, canvas.shadow)
+			if button ~= CalcAtkScreen.Buttons.PokemonIcon then
+				Drawing.drawButton(button, canvas.shadow)
+			end
 		end
 	end
 
